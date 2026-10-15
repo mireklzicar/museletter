@@ -27,6 +27,11 @@ CREATE TABLE IF NOT EXISTS subscribers (
     confirmed_at TEXT,
     unsubscribed_at TEXT,
     confirmation_sent_at TEXT,
+    signup_ip TEXT,
+    signup_user_agent TEXT,
+    signup_origin TEXT,
+    signup_referrer TEXT,
+    signup_source TEXT,
     UNIQUE (list_id, email)
 );
 CREATE INDEX IF NOT EXISTS idx_subscribers_list_status ON subscribers(list_id, status);
@@ -114,6 +119,16 @@ CREATE TABLE IF NOT EXISTS idempotency (
 );
 """
 
+# Evidence of how an address signed up (MUSELETTER_RECORD_SIGNUP_CONTEXT), kept
+# with the subscriber so consent can be shown later. Written once, on insert.
+SIGNUP_CONTEXT_COLUMNS = (
+    "signup_ip",
+    "signup_user_agent",
+    "signup_origin",
+    "signup_referrer",
+    "signup_source",
+)
+
 SUBSCRIBER_STATUSES = ("unconfirmed", "active", "unsubscribed", "bounced", "complained")
 
 # A template_id column holds a templates.id, the literal 'default' (the packaged
@@ -151,6 +166,9 @@ async def _migrate(db: aiosqlite.Connection) -> None:
         columns = {row["name"] for row in await cur.fetchall()}
     if "confirmation_sent_at" not in columns:
         await db.execute("ALTER TABLE subscribers ADD COLUMN confirmation_sent_at TEXT")
+    for column in SIGNUP_CONTEXT_COLUMNS:
+        if column not in columns:
+            await db.execute(f"ALTER TABLE subscribers ADD COLUMN {column} TEXT")
     for table in ("lists", "campaigns"):
         async with db.execute(f"PRAGMA table_info({table})") as cur:
             columns = {row["name"] for row in await cur.fetchall()}

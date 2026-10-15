@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from .. import doctor as doctor_mod
-from ..db import BUILTIN_TEMPLATE_ID, SUBSCRIBER_STATUSES, new_id, utcnow
+from ..db import BUILTIN_TEMPLATE_ID, SIGNUP_CONTEXT_COLUMNS, SUBSCRIBER_STATUSES, new_id, utcnow
 from ..render import SAMPLE_ISSUE_MARKDOWN, SAMPLE_ISSUE_SUBJECT, build_email, validate_template
 from ..subscriptions import subscribe_address
 from .common import (
@@ -60,6 +60,11 @@ class SignupIn(BaseModel):
 
     email: str = Field(max_length=320)
     name: str = Field(default="", max_length=200)
+    # The reader's request as the website backend saw it; stored only when
+    # MUSELETTER_RECORD_SIGNUP_CONTEXT is on.
+    source: str = Field(default="", max_length=200)
+    ip: str = Field(default="", max_length=64)
+    user_agent: str = Field(default="", max_length=500)
 
 
 class TagIn(BaseModel):
@@ -232,7 +237,14 @@ async def subscribe_from_backend(request: Request, ref: str, body: SignupIn):
     # The caller authenticates with the admin key and owns its bot verification.
     # This route remains available when public signup is disabled, and always
     # requires email confirmation regardless of the public form's opt-in mode.
-    return await subscribe_address(request, lst, email, body.name.strip(), double_opt_in=True)
+    context = {
+        "signup_ip": body.ip.strip(),
+        "signup_user_agent": body.user_agent,
+        "signup_source": body.source.strip(),
+    }
+    return await subscribe_address(
+        request, lst, email, body.name.strip(), double_opt_in=True, context=context
+    )
 
 
 @router.get("/lists/{ref}/subscribers")
@@ -452,14 +464,37 @@ async def export_subscribers(request: Request, ref: str):
     lst = await get_list(db, ref)
     out = io.StringIO()
     writer = csv.writer(out)
-    writer.writerow(["email", "name", "status", "tags", "created_at"])
+    # The first five columns are what `import` reads back; the rest are history.
+    writer.writerow(
+        [
+            "email",
+            "name",
+            "status",
+            "tags",
+            "created_at",
+            "confirmed_at",
+            "unsubscribed_at",
+            *SIGNUP_CONTEXT_COLUMNS,
+        ]
+    )
     async with db.execute(
         "SELECT * FROM subscribers WHERE list_id = ? ORDER BY created_at", (lst["id"],)
     ) as cur:
         rows = await cur.fetchall()
     for row in rows:
         tags = await subscriber_tag_names(db, row["id"])
-        writer.writerow([row["email"], row["name"], row["status"], ";".join(tags), row["created_at"]])
+        writer.writerow(
+            [
+                row["email"],
+                row["name"],
+                row["status"],
+                ";".join(tags),
+                row["created_at"],
+                row["confirmed_at"] or "",
+                row["unsubscribed_at"] or "",
+                *(row[column] or "" for column in SIGNUP_CONTEXT_COLUMNS),
+            ]
+        )
     return Response(content=out.getvalue(), media_type="text/csv")
 
 

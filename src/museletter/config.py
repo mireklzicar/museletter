@@ -25,6 +25,7 @@ class Settings:
     public_subscribe: bool = True  # expose POST /subscribe/{slug}; disable if adding via the admin API
     turnstile_secret: str = ""  # if set, /subscribe requires a valid Cloudflare Turnstile token
     confirmation_cooldown: float = 3600.0  # min seconds between confirmation emails to one address
+    record_signup_context: bool = False  # store IP, user agent, origin, referrer and source per signup
     secret: str = ""  # HMAC key for public links; auto-generated into the DB if empty
     extra: dict = field(default_factory=dict)
 
@@ -54,6 +55,8 @@ class Settings:
             not in ("0", "false", "no"),
             turnstile_secret=env.get("MUSELETTER_TURNSTILE_SECRET", ""),
             confirmation_cooldown=float(env.get("MUSELETTER_CONFIRMATION_COOLDOWN", "3600")),
+            record_signup_context=env.get("MUSELETTER_RECORD_SIGNUP_CONTEXT", "").lower()
+            in ("1", "true", "yes"),
             secret=env.get("MUSELETTER_SECRET", ""),
         )
 

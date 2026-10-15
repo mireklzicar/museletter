@@ -4,15 +4,27 @@ from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException, Request
 
-from .db import new_id, utcnow
+from .db import SIGNUP_CONTEXT_COLUMNS, new_id, utcnow
 from .events import record_event, suppress
 from .render import render_confirmation
 from .tokens import make_token
 
 
-async def subscribe_address(request: Request, lst, email: str, name: str, *, double_opt_in: bool) -> dict:
+async def subscribe_address(
+    request: Request,
+    lst,
+    email: str,
+    name: str,
+    *,
+    double_opt_in: bool,
+    context: dict[str, str] | None = None,
+) -> dict:
+    """`context` maps SIGNUP_CONTEXT_COLUMNS to values; it is stored only when
+    the operator enables record_signup_context, and only on the first signup."""
     db = request.app.state.db
     settings = request.app.state.settings
+    recorded = context if settings.record_signup_context and context else {}
+    signup = [recorded.get(column) or None for column in SIGNUP_CONTEXT_COLUMNS]
     ok = (
         {"status": "pending_confirmation", "message": "Check your inbox to confirm your subscription."}
         if double_opt_in
@@ -26,8 +38,10 @@ async def subscribe_address(request: Request, lst, email: str, name: str, *, dou
     now = utcnow()
     # The unique (list_id, email) constraint also deduplicates concurrent signups.
     await db.execute(
-        "INSERT INTO subscribers (id, list_id, email, name, status, created_at, confirmed_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(list_id, email) DO NOTHING",
+        "INSERT INTO subscribers (id, list_id, email, name, status, created_at, confirmed_at, "
+        f"{', '.join(SIGNUP_CONTEXT_COLUMNS)}) "
+        f"VALUES (?, ?, ?, ?, ?, ?, ?{', ?' * len(SIGNUP_CONTEXT_COLUMNS)}) "
+        "ON CONFLICT(list_id, email) DO NOTHING",
         (
             new_id("sub"),
             lst["id"],
@@ -36,6 +50,7 @@ async def subscribe_address(request: Request, lst, email: str, name: str, *, dou
             "unconfirmed" if double_opt_in else "active",
             now,
             None if double_opt_in else now,
+            *signup,
         ),
     )
     await db.commit()

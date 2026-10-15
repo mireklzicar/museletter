@@ -96,24 +96,35 @@ _MARK_SVG = (
 )
 
 
-def _page(
+def _page(request: Request, *args, **kwargs) -> HTMLResponse:
+    return _render_page(*args, attribution=request.app.state.settings.attribution, **kwargs)
+
+
+def _render_page(
     heading: str,
     body: str,
     *,
     variant: str = "accent",
     list_name: str = "Museletter",
     action: str = "",
+    attribution: bool = True,
 ) -> HTMLResponse:
     """Render a public page in the split-panel brand layout. `body` and `action`
-    are trusted HTML built by the caller; `heading` and `list_name` are escaped."""
+    are trusted HTML built by the caller; `heading` and `list_name` are escaped.
+    With attribution off, the Museletter mark and "Powered by" line are left out."""
     action_html = f'<div class="actions">{action}</div>' if action else ""
-    content = (
-        f'<div class="panel {variant}">{_MARK_SVG}'
-        f'<div><div class="panel-name">{html_mod.escape(list_name)}</div></div></div>'
-        f'<div class="content"><div><h1>{html_mod.escape(heading)}</h1>{body}{action_html}</div>'
+    foot = (
         '<div class="foot">Powered by '
         '<a href="https://github.com/sanketsaurav/museletter" style="text-decoration:underline;">Museletter</a>'
-        "</div></div>"
+        "</div>"
+        if attribution
+        else ""
+    )
+    content = (
+        f'<div class="panel {variant}">{_MARK_SVG if attribution else ""}'
+        f'<div><div class="panel-name">{html_mod.escape(list_name)}</div></div></div>'
+        f'<div class="content"><div><h1>{html_mod.escape(heading)}</h1>{body}{action_html}</div>'
+        f"{foot}</div>"
     )
     return HTMLResponse(_PAGE_TEMPLATE.substitute(title=html_mod.escape(heading), content=content))
 
@@ -167,8 +178,17 @@ async def subscribe(request: Request, slug: str):
     # Bots fill the hidden field; respond without changing the subscriber list.
     if honeypot:
         return JSONResponse(ok)
+    context = {
+        "signup_ip": client_ip(request),
+        "signup_user_agent": request.headers.get("user-agent", "")[:500],
+        "signup_origin": request.headers.get("origin", "")[:200],
+        "signup_referrer": request.headers.get("referer", "")[:500],
+        "signup_source": str(data.get("source", "")).strip()[:200],
+    }
     return JSONResponse(
-        await subscribe_address(request, lst, email, name, double_opt_in=settings.opt_in == "double")
+        await subscribe_address(
+            request, lst, email, name, double_opt_in=settings.opt_in == "double", context=context
+        )
     )
 
 
@@ -178,14 +198,14 @@ async def confirm(request: Request, token: str):
     invalid = ("Invalid link", "<p>This confirmation link is not valid.</p>")
     subscriber_id = verify_token(request.app.state.secret, token, "confirm")
     if subscriber_id is None:
-        return _page(*invalid, variant="muted")
+        return _page(request, *invalid, variant="muted")
     async with db.execute(
         "SELECT s.*, l.name AS list_name FROM subscribers s JOIN lists l ON l.id = s.list_id WHERE s.id = ?",
         (subscriber_id,),
     ) as cur:
         row = await cur.fetchone()
     if row is None:
-        return _page(*invalid, variant="muted")
+        return _page(request, *invalid, variant="muted")
     lst = row["list_name"]
     escaped = html_mod.escape(lst)
     # Only a pending double-opt-in may be confirmed. A confirm link is a GET
@@ -198,17 +218,20 @@ async def confirm(request: Request, token: str):
         )
         await db.commit()
         return _page(
+            request,
             "You're subscribed",
             f"<p>Welcome to <strong>{escaped}</strong>. Your first issue is on its way.</p>",
             list_name=lst,
         )
     if row["status"] == "active":
         return _page(
+            request,
             "You're subscribed",
             f"<p>You are already subscribed to <strong>{escaped}</strong>.</p>",
             list_name=lst,
         )
     return _page(
+        request,
         "Subscription closed",
         f"<p>This address is not subscribed to {escaped}. "
         f"Sign up again from the website if that is a mistake.</p>",
@@ -232,13 +255,14 @@ async def unsubscribe_page(request: Request, token: str):
     # email, and a destructive GET would silently unsubscribe real readers.
     subscriber_id = verify_token(request.app.state.secret, token, "unsubscribe")
     if subscriber_id is None:
-        return _page("Invalid link", "<p>This unsubscribe link is not valid.</p>", variant="muted")
+        return _page(request, "Invalid link", "<p>This unsubscribe link is not valid.</p>", variant="muted")
     list_name = await _subscriber_list_name(request.app.state.db, subscriber_id)
     action = (
         f'<form method="post" action="/unsubscribe/{html_mod.escape(token)}">'
         '<button class="btn btn-danger" type="submit">Unsubscribe</button></form>'
     )
     return _page(
+        request,
         "Unsubscribe?",
         f"<p>You will stop receiving emails from <strong>{html_mod.escape(list_name)}</strong>. "
         "This takes effect immediately.</p>",
@@ -253,7 +277,7 @@ async def unsubscribe(request: Request, token: str):
     db = request.app.state.db
     subscriber_id = verify_token(request.app.state.secret, token, "unsubscribe")
     if subscriber_id is None:
-        return _page("Invalid link", "<p>This unsubscribe link is not valid.</p>", variant="muted")
+        return _page(request, "Invalid link", "<p>This unsubscribe link is not valid.</p>", variant="muted")
     list_name = await _subscriber_list_name(db, subscriber_id)
     async with db.execute("SELECT * FROM subscribers WHERE id = ?", (subscriber_id,)) as cur:
         row = await cur.fetchone()
@@ -269,6 +293,7 @@ async def unsubscribe(request: Request, token: str):
         )
         await db.commit()
     return _page(
+        request,
         "Unsubscribed",
         "<p>You won't receive these emails anymore. You can re-subscribe any time from the website.</p>",
         list_name=list_name,

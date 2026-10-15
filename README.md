@@ -400,7 +400,7 @@ Set these in the server's environment (`museletter init` writes most of them).
 | `MUSELETTER_FROM_NAME` | no | sender display name |
 | `MUSELETTER_REPLY_TO` | no | Reply-To address on all outgoing email; when unset, replies go to the from address |
 | `MUSELETTER_POSTAL_ADDRESS` | no* | postal address in the footer (*required by CAN-SPAM) |
-| `MUSELETTER_ATTRIBUTION` | no | `false` removes the "Sent with Museletter" line from email footers (default `true`) |
+| `MUSELETTER_ATTRIBUTION` | no | `false` removes the "Sent with Museletter" line from email footers and the Museletter mark and "Powered by" line from public pages (default `true`) |
 | `MUSELETTER_OPT_IN` | no | `double` (default) or `single` |
 | `MUSELETTER_EMAIL_PROVIDER` | no | `ses` (default) or `cloudflare` |
 | `MUSELETTER_SEND_RATE` | no | emails/sec, default 10; keep under your provider's rate |
@@ -409,6 +409,7 @@ Set these in the server's environment (`museletter init` writes most of them).
 | `MUSELETTER_TRUST_PROXY` | no | `true` when behind a proxy, so rate limiting uses `X-Forwarded-For` not the proxy IP |
 | `MUSELETTER_PUBLIC_SUBSCRIBE` | no | `false` disables public signup; backends can still use authenticated `/v1/lists/{ref}/subscribe` |
 | `MUSELETTER_TURNSTILE_SECRET` | no | Cloudflare Turnstile secret; when set, `/subscribe` requires a valid Turnstile token |
+| `MUSELETTER_RECORD_SIGNUP_CONTEXT` | no | `true` stores the signup's IP, user agent, `Origin`, `Referer` and optional `source` field with the subscriber (first signup only), shown in the API and the CSV export as evidence of consent (default `false`) |
 | `MUSELETTER_CONFIRMATION_COOLDOWN` | no | min seconds between confirmation emails to one address, default 3600 |
 | `MUSELETTER_TEMPLATE_DIR` | no | server-side directory overriding the packaged templates (issue templates are better managed with `museletter templates`) |
 | `MUSELETTER_DB_PATH` | no | SQLite path, default `museletter.db` (the image uses `/data/museletter.db`) |

@@ -711,13 +711,13 @@ def preview(
         typer.echo(f"edit them, then run the server (or preview) with MUSELETTER_TEMPLATE_DIR={dest}")
         return
 
-    from .api.public import _page
+    from .api.public import _render_page
     from .config import Settings
     from .render import SAMPLE_ISSUE_MARKDOWN, SAMPLE_ISSUE_SUBJECT, build_email, render_confirmation
 
     def page_html(*a, **k) -> str:
         # HTMLResponse.body is typed bytes | memoryview; coerce before decode.
-        return bytes(_page(*a, **k).body).decode()
+        return bytes(_render_page(*a, attribution=attribution, **k).body).decode()
 
     ln, addr = "Your Newsletter", "123 Main St, Your City"
     # Read from the environment like MUSELETTER_TEMPLATE_DIR, so the preview

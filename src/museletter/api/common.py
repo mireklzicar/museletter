@@ -4,7 +4,7 @@ import re
 import aiosqlite
 from fastapi import HTTPException, Request
 
-from ..db import BUILTIN_TEMPLATE_ID
+from ..db import BUILTIN_TEMPLATE_ID, SIGNUP_CONTEXT_COLUMNS
 from ..render import template_source
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -121,6 +121,7 @@ def subscriber_json(row: aiosqlite.Row, tags: list[str]) -> dict:
         "created_at": row["created_at"],
         "confirmed_at": row["confirmed_at"],
         "unsubscribed_at": row["unsubscribed_at"],
+        "signup": {column.removeprefix("signup_"): row[column] for column in SIGNUP_CONTEXT_COLUMNS},
     }
 
 
